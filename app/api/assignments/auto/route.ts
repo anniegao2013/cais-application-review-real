@@ -1,29 +1,49 @@
 import { auth } from "@/auth";
 import { REVIEWERS } from "@/config/reviewers";
-import { createAssignments, getApplications, getAssignments } from "@/lib/sheets";
+import {
+  createAssignments,
+  getApplications,
+  getAssignments,
+} from "@/lib/sheets";
 
 export async function POST() {
   const session = await auth();
 
   if (!session?.user) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return Response.json(
+      { error: "Unauthorized" },
+      { status: 401 }
+    );
   }
 
   const applications = await getApplications();
   const existingAssignments = await getAssignments();
 
-  // A USC ID should correspond to exactly one application.
-  // Deduplicate defensively in case someone submits the form more than once.
+  // Defensive deduplication.
+  // getApplications() already deduplicates USC IDs, but keeping this
+  // here prevents the assignment algorithm from ever assigning the
+  // same USC ID twice.
   const uniqueApplications = Array.from(
-    new Map(applications.map((application) => [application.uscId, application])).values()
+    new Map(
+      applications.map((application) => [
+        application.uscId,
+        application,
+      ])
+    ).values()
   );
 
-  // Generate every possible reviewer pair.
-  const reviewerPairs: [typeof REVIEWERS[number], typeof REVIEWERS[number]][] = [];
+  // Generate every possible pair of reviewers.
+  const reviewerPairs: [
+    (typeof REVIEWERS)[number],
+    (typeof REVIEWERS)[number]
+  ][] = [];
 
   for (let i = 0; i < REVIEWERS.length; i++) {
     for (let j = i + 1; j < REVIEWERS.length; j++) {
-      reviewerPairs.push([REVIEWERS[i], REVIEWERS[j]]);
+      reviewerPairs.push([
+        REVIEWERS[i],
+        REVIEWERS[j],
+      ]);
     }
   }
 
@@ -32,12 +52,30 @@ export async function POST() {
     reviewerEmail: string;
   }[] = [];
 
-  for (let index = 0; index < uniqueApplications.length; index++) {
-    const application = uniqueApplications[index];
+  for (
+    let index = 0;
+    index < uniqueApplications.length;
+    index++
+  ) {
+    const application =
+      uniqueApplications[index];
 
-    const assignedReviewers = existingAssignments
-      .filter((assignment) => assignment.uscId === application.uscId)
-      .map((assignment) => assignment.reviewerEmail);
+    // Count unique reviewers who already have an assignment
+    // for this application.
+    const assignedReviewers = Array.from(
+      new Set(
+        existingAssignments
+          .filter(
+            (assignment) =>
+              assignment.uscId ===
+              application.uscId
+          )
+          .map(
+            (assignment) =>
+              assignment.reviewerEmail
+          )
+      )
+    );
 
     // Already has two reviewers.
     if (assignedReviewers.length >= 2) {
@@ -45,25 +83,46 @@ export async function POST() {
     }
 
     const [reviewer1, reviewer2] =
-      reviewerPairs[index % reviewerPairs.length];
+      reviewerPairs[
+        index % reviewerPairs.length
+      ];
 
-    const intendedReviewers = [reviewer1.email, reviewer2.email];
+    const intendedReviewers = [
+      reviewer1.email,
+      reviewer2.email,
+    ];
 
     for (const reviewerEmail of intendedReviewers) {
-      if (!assignedReviewers.includes(reviewerEmail)) {
+      if (
+        !assignedReviewers.includes(
+          reviewerEmail
+        )
+      ) {
         assignmentsToCreate.push({
           uscId: application.uscId,
           reviewerEmail,
         });
+
+        // Prevent accidentally adding the same reviewer
+        // twice during this run.
+        assignedReviewers.push(
+          reviewerEmail
+        );
       }
     }
   }
 
   if (assignmentsToCreate.length > 0) {
-    await createAssignments(assignmentsToCreate);
+    await createAssignments(
+      assignmentsToCreate
+    );
   }
 
   return Response.json({
-    created: assignmentsToCreate.length,
+    ok: true,
+    applicationsChecked:
+      uniqueApplications.length,
+    assignmentsCreated:
+      assignmentsToCreate.length,
   });
 }

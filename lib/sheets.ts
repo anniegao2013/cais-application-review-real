@@ -76,30 +76,69 @@ export async function getApplications(): Promise<Application[]> {
     "Applications"
   );
 
-  return rowsToObjects<Application>(
-    rows,
-    (get) => ({
-      timestamp: get("timestamp"),
-      email: get("email"),
-      name: get("name"),
-      uscId: get("usc_id"),
-      phone: get("phone"),
-      pronouns: get("pronouns"),
-      year: get("year"),
-      majorMinor: get("major_minor"),
-      coursework: get("coursework"),
-      howHeard: get("how_heard"),
-      links: get("links"),
-      whyJoin: get("why_join"),
-      aiResponse: get("ai_response"),
-      experienceResponse: get("experience_response"),
-      socialResponse: get("social_response"),
-      passionResponse: get("passion_response"),
-      availability: get("meeting_availability"),
-      maybeExplanation: get("maybe_explanation"),
-      notifsReaction: get("notifs_reaction"),
-    }),
-    3
+  const applications =
+    rowsToObjects<Application>(
+      rows,
+      (get) => ({
+        timestamp: get("timestamp"),
+        email: get("email"),
+        name: get("name"),
+        uscId: get("usc_id").trim(),
+        phone: get("phone"),
+        pronouns: get("pronouns"),
+        year: get("year"),
+        majorMinor: get("major_minor"),
+        coursework: get("coursework"),
+        howHeard: get("how_heard"),
+        links: get("links"),
+        whyJoin: get("why_join"),
+        aiResponse: get("ai_response"),
+        experienceResponse: get(
+          "experience_response"
+        ),
+        socialResponse: get(
+          "social_response"
+        ),
+        passionResponse: get(
+          "passion_response"
+        ),
+        availability: get(
+          "meeting_availability"
+        ),
+        maybeExplanation: get(
+          "maybe_explanation"
+        ),
+        notifsReaction: get(
+          "notifs_reaction"
+        ),
+      }),
+      3
+    );
+
+  // Remove empty rows.
+  const validApplications =
+    applications.filter(
+      (application) =>
+        application.uscId.length > 0
+    );
+
+  // One USC ID = one application.
+  //
+  // Map.set() overwrites an earlier entry with a later one,
+  // so if someone submits the form twice, we keep their
+  // most recent submission.
+  const applicationsByUscId =
+    new Map<string, Application>();
+
+  for (const application of validApplications) {
+    applicationsByUscId.set(
+      application.uscId,
+      application
+    );
+  }
+
+  return Array.from(
+    applicationsByUscId.values()
   );
 }
 
